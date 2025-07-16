@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-BioCryp CLI Tool v0.1
+BioCryp CLI Tool v0.2
 Features:
 - Peer-to-peer encrypted chat over TCP (Wi-Fi) or Bluetooth
-- DNA sequence encoding of ciphertext
-- Mutation on every /decode
+- DNA sequence encoding of ciphertext, with mapping seed included
+- Per-message mapping via seed ensures correct decode
+- Mutate DNA on display is removed (robust decoding)
 - Save/Load chat in FASTA format
-- CLI commands: /decode, /save, /load, /exit
+- CLI commands: /decode, /save <file>, /load <file>, /exit
 """
 import socket
 import threading
 import random
 import os
 import sys
+import json
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 
@@ -25,15 +27,14 @@ except ImportError:
 
 # ---------- CONFIGURATION ----------
 PORT = 5555
-BUFFER_SIZE = 4096
-chat_history = []  # list of (username, dna_seq)
+BUFFER_SIZE = 8192
+chat_history = []  # list of (username, seed, dna_seq)
 
 # ---------- DNA ENCODING ----------
 NUCLEOTIDES = ['A', 'T', 'C', 'G']
 
-def generate_mapping(seed=None):
-    if seed is not None:
-        random.seed(seed)
+def generate_mapping(seed):
+    random.seed(seed)
     bits = ['00', '01', '10', '11']
     nts = NUCLEOTIDES.copy()
     random.shuffle(nts)
@@ -50,8 +51,8 @@ def encode_to_dna(binary_data, mapping):
 
 
 def decode_from_dna(dna_seq, mapping):
-    rev = {v: k for k, v in mapping.items()}
-    bits = ''.join(rev[n] for n in dna_seq)
+    rev_map = {v: k for k, v in mapping.items()}
+    bits = ''.join(rev_map[n] for n in dna_seq)
     return bytes(int(bits[i:i+8], 2) for i in range(0, len(bits), 8))
 
 # ---------- CRYPTOGRAPHY (AES placeholder for PQ) ----------
@@ -75,8 +76,8 @@ def decrypt_message(data: bytes, key: bytes) -> str:
 # ---------- FASTA UTILITIES ----------
 def save_fasta(filename: str):
     with open(filename, 'w') as f:
-        for i, (user, dna) in enumerate(chat_history, 1):
-            f.write(f">{user}_msg_{i}\n")
+        for i, (user, seed, dna) in enumerate(chat_history, 1):
+            f.write(f">{user}_msg_{i}_seed_{seed}\n")
             f.write(dna + "\n")
     print(f"Chat saved to {filename}")
 
@@ -90,18 +91,21 @@ def load_fasta(filename: str):
         lines = [l.strip() for l in f if l.strip()]
     for i in range(0, len(lines), 2):
         header = lines[i][1:]
+        parts = header.split('_seed_')
+        user = parts[0]
+        seed = int(parts[1])
         seq = lines[i+1]
-        entries.append((header, seq))
+        entries.append((user, seed, seq))
+    for entry in entries:
+        chat_history.append(entry)
     print(f"Loaded {len(entries)} entries from {filename}")
-    for hdr, dna in entries:
-        chat_history.append((hdr, dna))
 
 # ---------- CONNECTION HANDLERS ----------
 
-# Wi-Fi (TCP) Mode
-
+# TCP Mode
 def tcp_server():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", PORT))
     s.listen(1)
     print(f"[TCP] Waiting for connection on port {PORT}...")
@@ -130,107 +134,96 @@ def bt_server():
     return conn
 
 
-def bt_client(bt_addr):
+def bt_client():
     if not BT_AVAILABLE:
         print("PyBluez not installed; Bluetooth unavailable.")
         sys.exit(1)
+    devices = discover_devices(lookup_names=True)
+    for i, (addr, name) in enumerate(devices, 1):
+        print(f"  {i}. {name} [{addr}]")
+    sel = int(input("Select device: ")) - 1
+    addr = devices[sel][0]
     cli = BluetoothSocket(RFCOMM)
-    cli.connect((bt_addr, PORT))
-    print(f"[BT] Connected to {bt_addr}:{PORT}")
+    cli.connect((addr, PORT))
+    print(f"[BT] Connected to {addr}:{PORT}")
     return cli
 
-# ---------- MESSAGE HANDLER ----------
-def receive_loop(conn, peer_name, key, mapping):
+# ---------- RECEIVE LOOP ----------
+
+def receive_loop(conn):
     while True:
         try:
-            data = conn.recv(BUFFER_SIZE)
-            if not data:
+            raw = conn.recv(BUFFER_SIZE).decode()
+            if not raw:
                 break
-            dna = data.decode()
-            chat_history.append((peer_name, dna))
-            print(f"\n[{peer_name}] {dna}\n> ", end='')
+            # Expect JSON header + :: + dna
+            header, dna = raw.split('::', 1)
+            info = json.loads(header)
+            user = info['user']
+            seed = info['seed']
+            chat_history.append((user, seed, dna))
+            print(f"\n[{user}] {dna}\n> ", end='')
         except Exception as e:
             print(f"Receive error: {e}")
             break
 
-# ---------- MAIN CHAT LOOP ----------
+# ---------- MAIN ----------
 if __name__ == '__main__':
-    print("=== BioCryp CLI Chat ===")
+    print("=== BioCryp CLI Chat v0.2 ===")
     username = input("Your username: ").strip()
     transport = input("Transport (tcp/bt): ").strip().lower()
 
-    # Setup connection
+    # Establish connection
     if transport == 'tcp':
         mode = input("Mode (server/client): ").strip().lower()
-        if mode == 'server':
-            conn = tcp_server()
-        else:
-            ip = input("Server IP: ").strip()
-            conn = tcp_client(ip)
+        conn = tcp_server() if mode == 'server' else tcp_client(input("Server IP: ").strip())
     elif transport == 'bt':
         if not BT_AVAILABLE:
-            print("Bluetooth support not available. Install PyBluez.")
+            print("Bluetooth support unavailable.")
             sys.exit(1)
         mode = input("Mode (server/client): ").strip().lower()
-        if mode == 'server':
-            conn = bt_server()
-        else:
-            print("Discovering BT devices...")
-            devices = discover_devices(lookup_names=True)
-            for i, (addr, name) in enumerate(devices, 1):
-                print(f"{i}. {name} [{addr}]")
-            sel = int(input("Select device: ")) - 1
-            conn = bt_client(devices[sel][0])
+        conn = bt_server() if mode == 'server' else bt_client()
     else:
-        print("Unknown transport.")
+        print("Invalid transport mode.")
         sys.exit(1)
 
-    # Initialize crypto state
     key = generate_key()
-    mapping = generate_mapping()
-    peer_name = 'Peer'
+    threading.Thread(target=receive_loop, args=(conn,), daemon=True).start()
 
-    # Start receiver thread
-    threading.Thread(target=receive_loop, args=(conn, peer_name, key, mapping), daemon=True).start()
-
-    # Chat input loop
-    print("Type messages to send. Commands: /decode /save <file> /load <file> /exit")
+    print("Type messages. Commands: /decode /save <file> /load <file> /exit")
     while True:
         inp = input("> ").strip()
         if inp == '/exit':
-            print("Exiting...")
+            print("Goodbye.")
             conn.close()
             break
-        elif inp.startswith('/decode'):
-            # Decode all peer messages
-            new_map = generate_mapping()
-            for i, (user, dna) in enumerate(chat_history):
-                if user == peer_name:
+        if inp.startswith('/decode'):
+            for i, (user, seed, dna) in enumerate(chat_history):
+                if user != username:
                     try:
+                        mapping = generate_mapping(seed)
                         data = decode_from_dna(dna, mapping)
                         text = decrypt_message(data, key)
-                        print(f"[Decoded {i+1}] {text}")
-                        # Mutate DNA
-                        mapping = new_map
-                        new_dna = encode_to_dna(data, mapping)
-                        chat_history[i] = (user, new_dna)
+                        print(f"[Decoded {i+1} from {user}] {text}")
                     except Exception as e:
-                        print(f"Decode error: {e}")
+                        print(f"Decode error {i+1}: {e}")
         elif inp.startswith('/save'):
-            parts = inp.split()
-            fname = parts[1] if len(parts) > 1 else 'chat.fasta'
+            fname = inp.split(maxsplit=1)[1] if ' ' in inp else 'chat.fasta'
             save_fasta(fname)
         elif inp.startswith('/load'):
-            parts = inp.split()
-            fname = parts[1] if len(parts) > 1 else 'chat.fasta'
+            fname = inp.split(maxsplit=1)[1] if ' ' in inp else 'chat.fasta'
             load_fasta(fname)
         else:
-            # Regular message: encrypt -> encode -> send
-            data = encrypt_message(inp, key)
-            mapping = generate_mapping()  # New mapping per message
-            dna = encode_to_dna(data, mapping)
-            chat_history.append((username, dna))
+            # Send message
+            ciphertext = encrypt_message(inp, key)
+            seed = random.getrandbits(32)
+            mapping = generate_mapping(seed)
+            dna = encode_to_dna(ciphertext, mapping)
+            # Prepare header
+            header = json.dumps({'user': username, 'seed': seed})
+            payload = header + '::' + dna
+            chat_history.append((username, seed, dna))
             try:
-                conn.send(dna.encode())
+                conn.send(payload.encode())
             except Exception as e:
                 print(f"Send error: {e}")
