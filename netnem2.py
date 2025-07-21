@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-GhostMesh CLI Tool v2.0 (PtP + UDP Group Chat, Termux Safe)
+GhostMesh CLI Tool v2.1 (PtP + UDP/TCP Group Chat, Termux Safe)
 Features:
-- Modes: PtP (peer-to-peer TCP) or Group (multi-client UDP broadcast)
+- Modes: PtP (peer-to-peer TCP) or Group (multi-client UDP broadcast or TCP relay)
 - Auto dependency check (Termux/Android/Linux/Windows/macOS)
 - IPv4-only network scan
 - AES-EAX encryption + DNA obfuscation
@@ -25,6 +25,9 @@ BUFFER_SIZE = 8192
 NUCS = ['A','T','C','G']
 chat_history = []  # list of (user, seed, dna)
 
+group_peers = []
+group_lock = threading.Lock()
+
 # ---------- DEPENDENCY CHECK ----------
 def ensure_python_package(pkg, imp=None):
     try:
@@ -32,6 +35,7 @@ def ensure_python_package(pkg, imp=None):
     except ImportError:
         subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
 
+ensure_python_package = ensure_python_package  # fallback
 ensure_python_package("pycryptodome", "Crypto.Cipher")
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import PBKDF2
@@ -126,8 +130,41 @@ def ptp_receiver(conn, username, key):
             print(f"\n[{info['user']}] {dna}\n> ", end="")
         except: break
 
-# ---------- GROUP (UDP) -------------
-# one socket, SO_BROADCAST, bind to 0.0.0.0:PORT
+# ---------- GROUP TCP (Relay) ----------
+def group_acceptor():
+    srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("0.0.0.0", PORT)); srv.listen()
+    print(f"[Group-TCP] Hosting on {PORT}…")
+    while True:
+        conn, addr = srv.accept()
+        with group_lock: group_peers.append(conn)
+        threading.Thread(target=group_tcp_receiver, args=(conn,), daemon=True).start()
+
+def group_tcp_receiver(conn):
+    while True:
+        try:
+            raw = conn.recv(BUFFER_SIZE)
+            if not raw: break
+            with group_lock:
+                for p in group_peers:
+                    if p is not conn:
+                        try: p.send(raw)
+                        except: pass
+            header, dna = raw.decode().split("::",1)
+            info = json.loads(header)
+            chat_history.append((info['user'], info['seed'], dna))
+            print(f"\n[{info['user']}] {dna}\n> ", end="")
+        except: break
+    with group_lock: group_peers.remove(conn)
+    conn.close()
+
+def group_tcp_join(ip):
+    s = socket.socket(); s.connect((ip, PORT))
+    print(f"[Group-TCP] Joined {ip}:{PORT}")
+    threading.Thread(target=group_tcp_receiver, args=(s,), daemon=True).start()
+    return s
+
+# ---------- GROUP UDP (Broadcast) ----------
 def setup_udp_sock():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -141,10 +178,9 @@ def udp_listener(sock, username):
             raw, addr = sock.recvfrom(BUFFER_SIZE)
             header, dna = raw.decode().split("::",1)
             info = json.loads(header)
-            user = info.get('user')
-            if user == username: continue
-            chat_history.append((user, info.get('seed'), dna))
-            print(f"\n[{user}] {dna}\n> ", end="")
+            if info.get('user') == username: continue
+            chat_history.append((info['user'], info.get('seed'), dna))
+            print(f"\n[{info['user']}] {dna}\n> ", end="")
         except: continue
 
 # ----------------- MAIN -----------------
@@ -163,17 +199,26 @@ if __name__ == "__main__":
         role = input("Server or Client? [s/c]: ").strip().lower()
         conn = ptp_server() if role == "s" else ptp_client(input("Server IP: ").strip())
         threading.Thread(target=ptp_receiver, args=(conn, username, key), daemon=True).start()
+
     else:
-        # UDP broadcast group
-        udp_sock = setup_udp_sock()
-        threading.Thread(target=udp_listener, args=(udp_sock, username), daemon=True).start()
-        print(f"[Group] UDP broadcast on port {PORT}…")
+        # choose group type
+        gtype = input("Group type? [tcp/broadcast]: ").strip().lower()
+        if gtype == "tcp":
+            sub = input("Host or Join? [h/j]: ").strip().lower()
+            if sub == "h":
+                threading.Thread(target=group_acceptor, daemon=True).start()
+                conn = None
+            else:
+                conn = group_tcp_join(input("Host IP: ").strip())
+        else:
+            udp_sock = setup_udp_sock()
+            threading.Thread(target=udp_listener, args=(udp_sock, username), daemon=True).start()
+            print(f"[Group-UDP] Broadcast on port {PORT}… no explicit join needed.")
 
     print("Commands: /decode /save <file> /load <file> /exit")
     while True:
         msg = input("> ").strip()
-        if msg == "/exit":
-            break
+        if msg == "/exit": break
 
         if msg.startswith("/decode"):
             for i, (u, seed, dna) in enumerate(chat_history, 1):
@@ -195,9 +240,7 @@ if __name__ == "__main__":
 
         if msg.startswith("/load"):
             fn = msg.split(maxsplit=1)[1] if " " in msg else "chat.fasta"
-            if not os.path.isfile(fn):
-                print("No", fn)
-                continue
+            if not os.path.isfile(fn): print("No", fn); continue
             lines = [l.strip() for l in open(fn) if l.strip()]
             for i in range(0, len(lines), 2):
                 hdr = lines[i][1:]
@@ -206,7 +249,7 @@ if __name__ == "__main__":
             print("Loaded entries")
             continue
 
-        # Encrypt & send
+        # encrypt & send
         blob = encrypt(msg, key)
         seed = random.getrandbits(32)
         dna = to_dna(blob, gen_map(seed))
@@ -217,6 +260,11 @@ if __name__ == "__main__":
         if mode == "ptp":
             conn.send(payload)
         else:
-            udp_sock.sendto(payload, ('<broadcast>', PORT))
+            if gtype == "tcp":
+                for p in group_peers:
+                    try: p.send(payload)
+                    except: pass
+            else:
+                udp_sock.sendto(payload, ('<broadcast>', PORT))
 
     print("Goodbye.")
