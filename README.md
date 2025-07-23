@@ -89,7 +89,7 @@ Choose:
 ```
 Mode: ptp
 Role: c
-Enter Server IP: 192.168.x.x
+Enter Server IP: 192.1xx.x.x
 ```
 
 #### Example: Group Mode (TCP)  
