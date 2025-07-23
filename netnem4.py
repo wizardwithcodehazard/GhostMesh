@@ -59,7 +59,7 @@ BANNER = """
  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝      ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
                                                                                  
 [/bold cyan]
-[bright_black]v4.2 | Secure P2P & Group Chat | AES-EAX + DNA Obfuscation[/bright_black]
+[bright_black]v4.2 | Secure P2P & Group Chat | AES-EAX [/bright_black]
 """
 
 BOOT_STEPS = [
@@ -293,7 +293,7 @@ def scan():
 @app.command()
 def about():
     """Show info about GhostMesh."""
-    console.print(Panel("[bold cyan]GhostMesh CLI v4.2[/bold cyan]\nGemini-Style UI • Secure P2P • DNA Obfuscation", style="green"))
+    console.print(Panel("[bold cyan]GhostMesh CLI v4.2[/bold cyan]\nGemini-Style UI • Secure P2P ", style="green"))
 
 # ---------- ENTRY ----------
 if __name__ == "__main__":
