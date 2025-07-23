@@ -1,7 +1,6 @@
 # 🔥 NetNemesis CLI Tool  
 *Secure Offline P2P & Group Chat with AES-EAX Encryption*
-<img width="701" height="290" alt="image" src="https://github.com/user-attachments/assets/9c199ce0-9405-4eb5-9fe3-9b6ba8adca01" />
-<img width="696" height="266" alt="image" src="https://github.com/user-attachments/assets/efd6f402-d73a-4faa-8c0a-b3f281473230" />
+<img width="1489" height="933" alt="image" src="https://github.com/user-attachments/assets/331187e6-8671-4fdd-b3a3-a357695eb739" />
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue.svg?style=for-the-badge&logo=python)
 ![License](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge)
