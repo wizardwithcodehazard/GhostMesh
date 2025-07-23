@@ -113,7 +113,7 @@ Choose:
 Mode: group
 Group type: tcp
 Role: j
-Enter Host IP: 192.168.x.x
+Enter Host IP: 192.1xx.x.x
 ```
 
 ---
