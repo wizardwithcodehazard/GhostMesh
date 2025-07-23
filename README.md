@@ -33,7 +33,7 @@
 - **Offline Mode Enhancements**: Build Wi-Fi Direct or Bluetooth support for offline zones.
 - **File Sharing Support**: Send files/images/videos using the same AES-encrypted channel.
 - **QR Code Handshake**: Generate QR codes for connection setup.
-- **Steganography**: encode encrypted data as DNA nucleotides (A, T, C, G).
+- **Steganography**: Encode encrypted data as DNA nucleotides (A, T, C, G).
 
 ---
 ## 📦 Requirements  
