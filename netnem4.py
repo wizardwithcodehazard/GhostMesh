@@ -89,6 +89,20 @@ def initial_setup():
     else:
         console.print("[green]✔ Non-Termux setup.[/green]")
 
+def get_default_ipv4():
+    os_name = platform.system().lower()
+    try:
+        if "windows" in os_name:
+            out = subprocess.check_output("ipconfig", shell=True, text=True)
+            match = re.search(r"IPv4 Address[.\s]*:\s*([\d\.]+)", out)
+            return match.group(1) if match else None
+        else:  # Linux/Termux
+            out = subprocess.check_output("ip route get 1", shell=True, text=True)
+            match = re.search(r"src\s+([\d\.]+)", out)
+            return match.group(1) if match else None
+    except:
+        return None
+
 def show_ipv4():
     try:
         os_name = platform.system().lower()
@@ -222,6 +236,13 @@ def interactive():
     key = derive_key(getpass("Passphrase: "))
     if input("Scan network? (y/n): ").lower() == "y":
         show_ipv4()
+        
+    default_ip = get_default_ipv4()
+    if default_ip:
+        console.print(f"[cyan]Detected default IP: {default_ip}[/cyan]")
+    else:
+        console.print("[red]Could not detect IP automatically.[/red]")
+
 
     mode = input("Mode? [ptp/group]: ").strip().lower()
     conn, udp_sock, role, gtype = None, None, None, None
@@ -252,6 +273,13 @@ def interactive():
         full_msg = f"[{username}] {msg}"
         if conn:
             conn.send(encrypt(full_msg, key))
+        elif role == "h" and gtype == "tcp":
+            with group_lock:
+                for peer in group_peers:
+                    try:
+                        peer.send(encrypt(full_msg, key))
+                    except:
+                        pass
         elif udp_sock:
             udp_sock.sendto(full_msg.encode(), ('<broadcast>', PORT))
 
