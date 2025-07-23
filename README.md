@@ -83,7 +83,7 @@ Role: s
 
 **Device B (Client):**  
 ```bash
-python netnemesis.py
+python netnem4.py
 ```
 Choose:  
 ```
@@ -106,7 +106,7 @@ Role: h
 
 **Joiners:**  
 ```bash
-python netnemesis.py
+python netnem4.py
 ```
 Choose:  
 ```
@@ -160,7 +160,7 @@ Enter Host IP: 192.168.x.x
 ---
 
 ## 📜 License  
-MIT License © 2025 NetNemesis Team  
+MIT License © 2025 NetNemesis
 
 ---
 
