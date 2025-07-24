@@ -10,7 +10,7 @@
 ---
 
 ## 📖 Overview  
-**is** is a **secure, lightweight CLI tool** designed for **encrypted peer-to-peer (P2P) and group chat** in **offline or internet-restricted environments**. Leveraging **AES-EAX encryption**, it ensures privacy and security for communication over **LAN or mobile hotspot networks**. Ideal for:  
+**Netnemesis** is a **secure, lightweight CLI tool** designed for **encrypted peer-to-peer (P2P) and group chat** in **offline or internet-restricted environments**. Leveraging **AES-EAX encryption**, it ensures privacy and security for communication over **LAN or mobile hotspot networks**. Ideal for:  
 - **No-internet zones** (e.g., remote areas, disaster scenarios)  
 - **Private, secure communication**  
 - **LAN-based or hotspot-connected devices**
