@@ -1,4 +1,4 @@
-# 🔥 NetNemesis CLI Tool  
+# NetNemesis CLI Tool  
 *Secure Offline P2P & Group Chat with AES-EAX Encryption*
 <img width="1489" height="933" alt="image" src="https://github.com/user-attachments/assets/331187e6-8671-4fdd-b3a3-a357695eb739" />
 
