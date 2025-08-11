@@ -292,10 +292,61 @@ def group_listener(conn, key):
             break
 
 # UDP Group
+def get_broadcast_address():
+    """Calculate the broadcast address for the current network"""
+    try:
+        local_ip = get_default_ipv4()
+        if not local_ip:
+            return "255.255.255.255"
+        
+        # Get network info using ip route or similar
+        os_name = platform.system().lower()
+        if "windows" not in os_name:
+            try:
+                # Get the network interface info
+                out = subprocess.check_output(f"ip addr show | grep 'inet.*{local_ip}'", shell=True, text=True)
+                # Extract CIDR notation (e.g., 192.168.43.123/24)
+                match = re.search(r'inet\s+[\d\.]+/(\d+)', out)
+                if match:
+                    prefix_len = int(match.group(1))
+                    # Calculate broadcast address
+                    ip_parts = [int(x) for x in local_ip.split('.')]
+                    
+                    # Create subnet mask
+                    mask = (0xFFFFFFFF >> (32 - prefix_len)) << (32 - prefix_len)
+                    
+                    # Calculate network address
+                    ip_int = (ip_parts[0] << 24) + (ip_parts[1] << 16) + (ip_parts[2] << 8) + ip_parts[3]
+                    network = ip_int & mask
+                    broadcast = network | (0xFFFFFFFF >> prefix_len)
+                    
+                    # Convert back to dotted decimal
+                    broadcast_addr = f"{(broadcast >> 24) & 0xFF}.{(broadcast >> 16) & 0xFF}.{(broadcast >> 8) & 0xFF}.{broadcast & 0xFF}"
+                    return broadcast_addr
+            except:
+                pass
+        
+        # Fallback: assume /24 network
+        ip_parts = local_ip.split('.')
+        return f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+    except:
+        return "255.255.255.255"
+
 def setup_udp_sock():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.bind(("", PORT))
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    # Try binding to specific interface first, fallback to all interfaces
+    try:
+        local_ip = get_default_ipv4()
+        if local_ip:
+            sock.bind((local_ip, PORT))
+        else:
+            sock.bind(("", PORT))
+    except:
+        sock.bind(("", PORT))
+    
     return sock
 
 def udp_listener(sock, username):
@@ -308,9 +359,9 @@ def udp_listener(sock, username):
                 sender = msg.split('] ')[0][1:]  # Extract username
                 message = '] '.join(msg.split('] ')[1:])  # Extract message
                 if sender != username:  # Don't show our own messages
-                    console.print(f"\n[cyan]<{sender}>[/cyan] [white]{message}[/white]\n> ", end="")
+                    console.print(f"\n[cyan]<{sender}>[/cyan] [white]{message}[/white] [dim]({addr[0]})[/dim]\n> ", end="")
             elif username not in msg:
-                console.print(f"\n[cyan][UDP][/cyan] {msg}\n> ", end="")
+                console.print(f"\n[cyan][UDP][/cyan] {msg} [dim]({addr[0]})[/dim]\n> ", end="")
         except Exception as e:
             console.print(f"\n[red]Error in UDP listener: {e}[/red]\n> ", end="")
             break
@@ -365,10 +416,12 @@ def interactive():
                 conn = group_tcp_join(host_ip, key)
         else:
             udp_sock = setup_udp_sock()
-            threading.Thread(target=udp_listener, args=(udp_sock, username,), daemon=True).start()
+            broadcast_addr = get_broadcast_address()
             console.print(f"[green][Group-UDP][/green] Broadcast on port {PORT}")
+            console.print(f"[yellow]Broadcast address: {broadcast_addr}[/yellow]")
+            threading.Thread(target=udp_listener, args=(udp_sock, username,), daemon=True).start()
 
-    console.print("[yellow]Commands:[/yellow] /exit")
+    console.print("[yellow]Commands:[/yellow] /exit, /peers (UDP only)")
     console.print(f"[green]You are now chatting as: {username}[/green]")
 
     while True:
@@ -376,6 +429,10 @@ def interactive():
             msg = input("> ").strip()
             if msg == "/exit":
                 break
+            if msg == "/peers" and udp_sock:
+                console.print("[cyan]Sending peer discovery...[/cyan]")
+                udp_sock.sendto(f"[SYSTEM] Peer discovery from {username}".encode(), (broadcast_addr, PORT))
+                continue
             if not msg:  # Skip empty messages
                 continue
                 
@@ -390,7 +447,51 @@ def interactive():
                         except:
                             group_peers.remove(peer)
             elif udp_sock:
-                udp_sock.sendto(full_msg.encode(), ('<broadcast>', PORT))
+                try:
+                    # Try multiple broadcast methods
+                    sent = False
+                    
+                    # Method 1: Calculated broadcast address
+                    try:
+                        udp_sock.sendto(full_msg.encode(), (broadcast_addr, PORT))
+                        sent = True
+                    except Exception as e1:
+                        console.print(f"[red]Broadcast method 1 failed: {e1}[/red]")
+                    
+                    # Method 2: Limited broadcast if method 1 fails
+                    if not sent:
+                        try:
+                            udp_sock.sendto(full_msg.encode(), ("255.255.255.255", PORT))
+                            sent = True
+                        except Exception as e2:
+                            console.print(f"[red]Broadcast method 2 failed: {e2}[/red]")
+                    
+                    # Method 3: Send to common private network ranges
+                    if not sent:
+                        local_ip = get_default_ipv4()
+                        if local_ip:
+                            ip_parts = local_ip.split('.')
+                            # Try different common broadcast addresses
+                            broadcast_candidates = [
+                                f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255",
+                                "192.168.1.255",
+                                "192.168.0.255", 
+                                "10.0.0.255"
+                            ]
+                            
+                            for candidate in broadcast_candidates:
+                                try:
+                                    udp_sock.sendto(full_msg.encode(), (candidate, PORT))
+                                    sent = True
+                                    break
+                                except:
+                                    continue
+                    
+                    if not sent:
+                        console.print("[red]All broadcast methods failed. Check network connectivity.[/red]")
+                        
+                except Exception as e:
+                    console.print(f"[red]Error sending UDP message: {e}[/red]")
         except KeyboardInterrupt:
             break
         except Exception as e:
