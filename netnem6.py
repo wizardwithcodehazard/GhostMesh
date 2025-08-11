@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GhostMesh CLI Tool v4.2
+GhostMesh CLI Tool v4.1
 - Premium Gemini-style UI
 - Secure P2P & Group Chat with AES-EAX + DNA Obfuscation
 """
@@ -59,7 +59,7 @@ BANNER = """
  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝      ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
                                                                                  
 [/bold cyan]
-[bright_black]v4.2 | Secure P2P & Group Chat | AES-EAX + DNA Obfuscation[/bright_black]
+[bright_black]v4.1 | Secure P2P & Group Chat | AES-EAX + DNA Obfuscation[/bright_black]
 """
 
 BOOT_STEPS = [
@@ -114,6 +114,24 @@ def show_ipv4():
 def derive_key(passphrase):
     return PBKDF2(passphrase, b"ghostmesh_salt", dkLen=32, count=100000)
 
+def gen_map(seed):
+    random.seed(seed)
+    bits, nts = ['00', '01', '10', '11'], NUCS.copy()
+    random.shuffle(nts)
+    return {bits[i]: nts[i] for i in range(4)}
+
+def to_dna(data, m):
+    s = ''
+    for b in data:
+        for i in range(0, 8, 2):
+            s += m[f"{b:08b}"[i:i+2]]
+    return s
+
+def from_dna(seq, m):
+    rev = {v: k for k, v in m.items()}
+    bits = ''.join(rev[c] for c in seq)
+    return bytes(int(bits[i:i+8], 2) for i in range(0, len(bits), 8))
+
 def encrypt(msg, key):
     c = AES.new(key, AES.MODE_EAX)
     ct, tag = c.encrypt_and_digest(msg.encode())
@@ -129,7 +147,6 @@ def ptp_server():
     s = socket.socket()
     s.bind(("0.0.0.0", PORT))
     s.listen(1)
-    console.print(f"[yellow][PtP][/yellow] Waiting for connection on port {PORT}...")
     conn, addr = s.accept()
     console.print(f"[bold green][PtP][/bold green] Connected by {addr}")
     return conn
@@ -140,19 +157,21 @@ def ptp_client(ip):
     console.print(f"[bold green][PtP][/bold green] Connected to {ip}:{PORT}")
     return s
 
-def ptp_receiver(conn, key):
+def ptp_receiver(conn, username):
     while True:
         try:
             data = conn.recv(BUFFER_SIZE)
             if not data:
                 break
-            msg = decrypt(data, key)
-            console.print(f"\n[cyan]{msg}[/cyan]\n> ", end="")
+            hdr, dna = data.decode().split("::", 1)
+            info = json.loads(hdr)
+            if info['user'] != username:
+                console.print(f"\n[cyan][{info['user']}][/cyan] {dna}\n> ", end="")
         except:
             break
 
 # ---------- GROUP CHAT ----------
-def group_acceptor(key):
+def group_acceptor():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("0.0.0.0", PORT))
     server.listen(5)
@@ -161,16 +180,14 @@ def group_acceptor(key):
         conn, addr = server.accept()
         with group_lock:
             group_peers.append(conn)
-        threading.Thread(target=group_handler, args=(conn, key), daemon=True).start()
+        threading.Thread(target=group_handler, args=(conn,), daemon=True).start()
 
-def group_handler(conn, key):
+def group_handler(conn):
     while True:
         try:
             data = conn.recv(BUFFER_SIZE)
             if not data:
                 break
-            msg = decrypt(data, key)
-            console.print(f"\n[cyan]{msg}[/cyan]\n> ", end="")
             with group_lock:
                 for peer in group_peers:
                     if peer != conn:
@@ -178,25 +195,24 @@ def group_handler(conn, key):
         except:
             break
 
-def group_tcp_join(host_ip, key):
+def group_tcp_join(host_ip):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host_ip, PORT))
     console.print(f"[green][Group-TCP][/green] Joined {host_ip}:{PORT}")
-    threading.Thread(target=group_listener, args=(s, key), daemon=True).start()
+    threading.Thread(target=group_listener, args=(s,), daemon=True).start()
     return s
 
-def group_listener(conn, key):
+def group_listener(conn):
     while True:
         try:
             data = conn.recv(BUFFER_SIZE)
             if not data:
                 break
-            msg = decrypt(data, key)
-            console.print(f"\n[cyan]{msg}[/cyan]\n> ", end="")
+            console.print(f"\n[cyan][Group][/cyan] {data.decode()}\n> ", end="")
         except:
             break
 
-# UDP Group
+# UDP group (broadcast)
 def setup_udp_sock():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -229,15 +245,15 @@ def interactive():
     if mode == "ptp":
         role = input("Server or Client? [s/c]: ").strip().lower()
         conn = ptp_server() if role == "s" else ptp_client(input("Server IP: ").strip())
-        threading.Thread(target=ptp_receiver, args=(conn, key,), daemon=True).start()
+        threading.Thread(target=ptp_receiver, args=(conn, username,), daemon=True).start()
     else:
         gtype = input("Group type? [tcp/broadcast]: ").strip().lower()
         if gtype == "tcp":
             role = input("Host or Join? [h/j]: ").strip().lower()
             if role == "h":
-                threading.Thread(target=group_acceptor, args=(key,), daemon=True).start()
+                threading.Thread(target=group_acceptor, daemon=True).start()
             else:
-                conn = group_tcp_join(input("Host IP: ").strip(), key)
+                conn = group_tcp_join(input("Host IP: ").strip())
         else:
             udp_sock = setup_udp_sock()
             threading.Thread(target=udp_listener, args=(udp_sock, username,), daemon=True).start()
@@ -249,11 +265,10 @@ def interactive():
         msg = input("> ").strip()
         if msg == "/exit":
             break
-        full_msg = f"[{username}] {msg}"
         if conn:
-            conn.send(encrypt(full_msg, key))
+            conn.send(f"[{username}] {msg}".encode())
         elif udp_sock:
-            udp_sock.sendto(full_msg.encode(), ('<broadcast>', PORT))
+            udp_sock.sendto(f"[{username}] {msg}".encode(), ('<broadcast>', PORT))
 
     console.print("[bold red]Goodbye.[/bold red]")
 
@@ -265,13 +280,10 @@ def scan():
 @app.command()
 def about():
     """Show info about GhostMesh."""
-    console.print(Panel("[bold cyan]GhostMesh CLI v4.2[/bold cyan]\nGemini-Style UI • Secure P2P • DNA Obfuscation", style="green"))
+    console.print(Panel("[bold cyan]GhostMesh CLI v4.1[/bold cyan]\nGemini-Style UI • Secure P2P • DNA Obfuscation", style="green"))
 
 # ---------- ENTRY ----------
 if __name__ == "__main__":
     console.print(BANNER)
     boot_sequence()
-    if len(sys.argv) == 1:
-        interactive()
-    else:
-        app()
+    app()
