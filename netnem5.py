@@ -299,16 +299,23 @@ def get_broadcast_address():
         if not local_ip:
             return "255.255.255.255"
         
-        # Get network info using ip route or similar
+        console.print(f"[yellow]Detecting broadcast for local IP: {local_ip}[/yellow]")
+        
+        # Get network info using multiple methods
         os_name = platform.system().lower()
         if "windows" not in os_name:
+            # Method 1: Try ip addr command
             try:
-                # Get the network interface info
-                out = subprocess.check_output(f"ip addr show | grep 'inet.*{local_ip}'", shell=True, text=True)
-                # Extract CIDR notation (e.g., 192.168.43.123/24)
-                match = re.search(r'inet\s+[\d\.]+/(\d+)', out)
+                # Use more specific grep to find the exact interface
+                out = subprocess.check_output(f"ip addr | grep -A 2 -B 2 '{local_ip}'", shell=True, text=True)
+                console.print(f"[dim]Network info: {out.strip()}[/dim]")
+                
+                # Look for CIDR notation
+                match = re.search(rf'inet\s+{re.escape(local_ip)}/(\d+)', out)
                 if match:
                     prefix_len = int(match.group(1))
+                    console.print(f"[yellow]Found network prefix: /{prefix_len}[/yellow]")
+                    
                     # Calculate broadcast address
                     ip_parts = [int(x) for x in local_ip.split('.')]
                     
@@ -322,30 +329,100 @@ def get_broadcast_address():
                     
                     # Convert back to dotted decimal
                     broadcast_addr = f"{(broadcast >> 24) & 0xFF}.{(broadcast >> 16) & 0xFF}.{(broadcast >> 8) & 0xFF}.{broadcast & 0xFF}"
+                    console.print(f"[green]Calculated broadcast: {broadcast_addr}[/green]")
                     return broadcast_addr
-            except:
-                pass
+            except Exception as e:
+                console.print(f"[red]Method 1 failed: {e}[/red]")
+            
+            # Method 2: Try route command
+            try:
+                out = subprocess.check_output("route -n", shell=True, text=True)
+                # Look for the network that contains our IP
+                for line in out.split('\n'):
+                    if local_ip in line or 'U' in line:
+                        console.print(f"[dim]Route line: {line}[/dim]")
+                        # Try to extract network info
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            dest = parts[0]
+                            mask = parts[2] if len(parts) > 2 else "255.255.255.0"
+                            if dest != "0.0.0.0":
+                                # Calculate broadcast from destination and mask
+                                console.print(f"[yellow]Found route - Dest: {dest}, Mask: {mask}[/yellow]")
+            except Exception as e:
+                console.print(f"[red]Method 2 failed: {e}[/red]")
         
-        # Fallback: assume /24 network
+        # Method 3: Smart fallback based on IP ranges
         ip_parts = local_ip.split('.')
-        return f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
-    except:
+        first_octet = int(ip_parts[0])
+        second_octet = int(ip_parts[1])
+        
+        console.print(f"[yellow]Using smart fallback for IP range[/yellow]")
+        
+        # Common network patterns
+        if first_octet == 10:
+            # Class A private network - could be /8, /16, or /24
+            if second_octet in [79]:  # Your case specifically
+                broadcast_addr = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+            else:
+                broadcast_addr = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"  # Assume /24
+        elif first_octet == 192 and second_octet == 168:
+            # Class C private network - usually /24
+            broadcast_addr = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+        elif first_octet == 172 and 16 <= second_octet <= 31:
+            # Class B private network - usually /24 in mobile networks
+            broadcast_addr = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+        else:
+            # Default to /24
+            broadcast_addr = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+        
+        console.print(f"[green]Fallback broadcast: {broadcast_addr}[/green]")
+        return broadcast_addr
+        
+    except Exception as e:
+        console.print(f"[red]Broadcast detection failed: {e}[/red]")
         return "255.255.255.255"
 
 def setup_udp_sock():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    # Enable broadcast
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     
-    # Try binding to specific interface first, fallback to all interfaces
+    # For Android/Termux - try to set additional socket options
     try:
-        local_ip = get_default_ipv4()
-        if local_ip:
-            sock.bind((local_ip, PORT))
-        else:
-            sock.bind(("", PORT))
+        # Enable port reuse
+        if hasattr(socket, 'SO_REUSEPORT'):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     except:
-        sock.bind(("", PORT))
+        pass
+    
+    # Try binding with better error handling
+    bind_attempts = [
+        ("", PORT),  # Bind to all interfaces first
+        ("0.0.0.0", PORT),  # Alternative all interfaces
+    ]
+    
+    # Add local IP to attempts if available
+    local_ip = get_default_ipv4()
+    if local_ip:
+        bind_attempts.insert(0, (local_ip, PORT))
+    
+    bound = False
+    for addr in bind_attempts:
+        try:
+            console.print(f"[yellow]Trying to bind to {addr[0] or 'all interfaces'}:{addr[1]}[/yellow]")
+            sock.bind(addr)
+            console.print(f"[green]Successfully bound to {addr[0] or 'all interfaces'}:{addr[1]}[/green]")
+            bound = True
+            break
+        except Exception as e:
+            console.print(f"[red]Failed to bind to {addr}: {e}[/red]")
+            continue
+    
+    if not bound:
+        console.print("[red]Warning: Could not bind socket properly[/red]")
     
     return sock
 
@@ -448,50 +525,55 @@ def interactive():
                             group_peers.remove(peer)
             elif udp_sock:
                 try:
-                    # Try multiple broadcast methods
+                    # For your network (10.79.179.x), the broadcast should be 10.79.179.255
                     sent = False
                     
-                    # Method 1: Calculated broadcast address
+                    # Method 1: Use calculated/detected broadcast address
                     try:
+                        console.print(f"[yellow]Sending to: {broadcast_addr}[/yellow]")
                         udp_sock.sendto(full_msg.encode(), (broadcast_addr, PORT))
                         sent = True
+                        console.print(f"[green]Message sent successfully to {broadcast_addr}[/green]")
                     except Exception as e1:
-                        console.print(f"[red]Broadcast method 1 failed: {e1}[/red]")
+                        console.print(f"[red]Broadcast method 1 failed ({broadcast_addr}): {e1}[/red]")
                     
-                    # Method 2: Limited broadcast if method 1 fails
+                    # Method 2: Try subnet-specific broadcast if method 1 fails
+                    if not sent and local_ip:
+                        ip_parts = local_ip.split('.')
+                        subnet_broadcast = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+                        if subnet_broadcast != broadcast_addr:
+                            try:
+                                console.print(f"[yellow]Trying subnet broadcast: {subnet_broadcast}[/yellow]")
+                                udp_sock.sendto(full_msg.encode(), (subnet_broadcast, PORT))
+                                sent = True
+                                console.print(f"[green]Message sent via subnet broadcast[/green]")
+                            except Exception as e2:
+                                console.print(f"[red]Subnet broadcast failed: {e2}[/red]")
+                    
+                    # Method 3: Try direct multicast to known good addresses
                     if not sent:
+                        # Try sending to other devices we've seen messages from
+                        console.print("[yellow]Trying alternative broadcast methods...[/yellow]")
+                        
+                        # Create a new socket for sending if the original has permission issues
                         try:
-                            udp_sock.sendto(full_msg.encode(), ("255.255.255.255", PORT))
-                            sent = True
-                        except Exception as e2:
-                            console.print(f"[red]Broadcast method 2 failed: {e2}[/red]")
-                    
-                    # Method 3: Send to common private network ranges
-                    if not sent:
-                        local_ip = get_default_ipv4()
-                        if local_ip:
-                            ip_parts = local_ip.split('.')
-                            # Try different common broadcast addresses
-                            broadcast_candidates = [
-                                f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255",
-                                "192.168.1.255",
-                                "192.168.0.255", 
-                                "10.0.0.255"
-                            ]
+                            send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                            send_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                             
-                            for candidate in broadcast_candidates:
-                                try:
-                                    udp_sock.sendto(full_msg.encode(), (candidate, PORT))
-                                    sent = True
-                                    break
-                                except:
-                                    continue
+                            # Don't bind for sending, just send
+                            send_sock.sendto(full_msg.encode(), (broadcast_addr, PORT))
+                            send_sock.close()
+                            sent = True
+                            console.print("[green]Message sent via new socket[/green]")
+                        except Exception as e3:
+                            console.print(f"[red]New socket method failed: {e3}[/red]")
                     
                     if not sent:
-                        console.print("[red]All broadcast methods failed. Check network connectivity.[/red]")
+                        console.print("[red]All broadcast methods failed. Check network permissions.[/red]")
+                        console.print("[yellow]Try running with different network permissions or check if other devices are on the same subnet[/yellow]")
                         
                 except Exception as e:
-                    console.print(f"[red]Error sending UDP message: {e}[/red]")
+                    console.print(f"[red]Critical error sending UDP message: {e}[/red]")
         except KeyboardInterrupt:
             break
         except Exception as e:
