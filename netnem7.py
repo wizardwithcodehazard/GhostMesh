@@ -296,7 +296,7 @@ def ptp_receiver(conn, key):
                 break
             msg = decrypt(data, key)
             print_message(msg)
-            console.print("> ", end="", flush=True)
+            console.print("> ", end="")
         except Exception as e:
             console.print(f"[red][PtP recv error][/red] {e}")
             break
@@ -324,7 +324,7 @@ def group_handler(conn, key):
                     break
                 msg = decrypt(data, key)
                 print_message(msg)
-                console.print("> ", end="", flush=True)
+                console.print("> ", end="")
                 # broadcast to other peers
                 dead = []
                 with group_lock:
@@ -363,7 +363,7 @@ def group_listener(conn, key):
                 break
             msg = decrypt(data, key)
             print_message(msg)
-            console.print("> ", end="", flush=True)
+            console.print("> ", end="")
         except Exception as e:
             console.print(f"[red][Group listener error][/red] {e}")
             break
