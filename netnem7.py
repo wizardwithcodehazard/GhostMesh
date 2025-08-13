@@ -32,6 +32,7 @@ console = Console()
 
 # ---------------- CONFIG ----------------
 PORT = 5555
+FALLBACK_PORTS = [5556, 5557, 5558, 8888, 9999]
 BUFFER_SIZE = 8192
 NUCS = ['A', 'T', 'C', 'G']
 chat_history = []
@@ -250,6 +251,9 @@ def fallback_medic_triage(text):
 def socket_setup(s):
     try:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # For mobile/Android, also try SO_REUSEPORT if available
+        if hasattr(socket, 'SO_REUSEPORT'):
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     except Exception:
         pass
     try:
@@ -272,9 +276,35 @@ def _remove_peer(sock):
 
 def ptp_server():
     s = socket_setup(socket.socket())
-    s.bind(("0.0.0.0", PORT))
+    
+    # Try binding to default port first, then fallbacks
+    ports_to_try = [PORT] + FALLBACK_PORTS
+    bound_port = None
+    
+    for port in ports_to_try:
+        try:
+            s.bind(("0.0.0.0", port))
+            bound_port = port
+            console.print(f"[green]Successfully bound to port {port}[/green]")
+            break
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                console.print(f"[yellow]Port {port} in use, trying next...[/yellow]")
+                continue
+            elif e.errno == 13:  # Permission denied
+                console.print(f"[yellow]Permission denied for port {port}, trying next...[/yellow]")
+                continue
+            else:
+                console.print(f"[red]Error binding to port {port}: {e}[/red]")
+                continue
+    
+    if bound_port is None:
+        console.print("[red]Could not bind to any port. Try running with different ports or as root.[/red]")
+        s.close()
+        return None
+    
     s.listen(1)
-    console.print(f"[yellow][PtP][/yellow] Waiting for connection on port {PORT}...")
+    console.print(f"[yellow][PtP][/yellow] Waiting for connection on port {bound_port}...")
     conn, addr = s.accept()
     socket_setup(conn)
     console.print(f"[bold green][PtP][/bold green] Connected by {addr}")
@@ -282,9 +312,30 @@ def ptp_server():
 
 def ptp_client(ip):
     s = socket_setup(socket.socket())
-    s.connect((ip, PORT))
+    
+    # Try connecting to default port first, then fallbacks
+    ports_to_try = [PORT] + FALLBACK_PORTS
+    connected_port = None
+    
+    for port in ports_to_try:
+        try:
+            s.connect((ip, port))
+            connected_port = port
+            break
+        except (ConnectionRefusedError, OSError) as e:
+            console.print(f"[yellow]Could not connect to {ip}:{port} - {e}[/yellow]")
+            if port != ports_to_try[-1]:  # Not the last port
+                s.close()
+                s = socket_setup(socket.socket())
+                continue
+    
+    if connected_port is None:
+        console.print(f"[red]Could not connect to {ip} on any port[/red]")
+        s.close()
+        return None
+    
     socket_setup(s)
-    console.print(f"[bold green][PtP][/bold green] Connected to {ip}:{PORT}")
+    console.print(f"[bold green][PtP][/bold green] Connected to {ip}:{connected_port}")
     return s
 
 def ptp_receiver(conn, key):
@@ -320,15 +371,46 @@ def ptp_receiver(conn, key):
 # ---------- GROUP CHAT ----------
 def group_acceptor(key):
     server = socket_setup(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-    server.bind(("0.0.0.0", PORT))
+    
+    # Try binding to default port first, then fallbacks
+    ports_to_try = [PORT] + FALLBACK_PORTS
+    bound_port = None
+    
+    for port in ports_to_try:
+        try:
+            server.bind(("0.0.0.0", port))
+            bound_port = port
+            console.print(f"[green]Successfully bound to port {port}[/green]")
+            break
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                console.print(f"[yellow]Port {port} in use, trying next...[/yellow]")
+                continue
+            elif e.errno == 13:  # Permission denied
+                console.print(f"[yellow]Permission denied for port {port}, trying next...[/yellow]")
+                continue
+            else:
+                console.print(f"[red]Error binding to port {port}: {e}[/red]")
+                continue
+    
+    if bound_port is None:
+        console.print("[red]Could not bind to any port. Try running with different ports or as root.[/red]")
+        server.close()
+        return
+    
     server.listen(5)
-    console.print(f"[green][Group-TCP][/green] Hosting on port {PORT}")
+    console.print(f"[green][Group-TCP][/green] Hosting on port {bound_port}")
+    
     while True:
-        conn, addr = server.accept()
-        socket_setup(conn)
-        with group_lock:
-            group_peers.append(conn)
-        threading.Thread(target=group_handler, args=(conn, key), daemon=True).start()
+        try:
+            conn, addr = server.accept()
+            socket_setup(conn)
+            with group_lock:
+                group_peers.append(conn)
+            threading.Thread(target=group_handler, args=(conn, key), daemon=True).start()
+        except Exception as e:
+            console.print(f"[red]Accept error: {e}[/red]")
+            break
 
 def group_handler(conn, key):
     try:
@@ -367,9 +449,30 @@ def group_handler(conn, key):
 
 def group_tcp_join(host_ip, key):
     s = socket_setup(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-    s.connect((host_ip, PORT))
+    
+    # Try connecting to default port first, then fallbacks
+    ports_to_try = [PORT] + FALLBACK_PORTS
+    connected_port = None
+    
+    for port in ports_to_try:
+        try:
+            s.connect((host_ip, port))
+            connected_port = port
+            break
+        except (ConnectionRefusedError, OSError) as e:
+            console.print(f"[yellow]Could not connect to {host_ip}:{port} - {e}[/yellow]")
+            if port != ports_to_try[-1]:  # Not the last port
+                s.close()
+                s = socket_setup(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+                continue
+    
+    if connected_port is None:
+        console.print(f"[red]Could not connect to {host_ip} on any port[/red]")
+        s.close()
+        return None
+    
     socket_setup(s)
-    console.print(f"[green][Group-TCP][/green] Joined {host_ip}:{PORT}")
+    console.print(f"[green][Group-TCP][/green] Joined {host_ip}:{connected_port}")
     threading.Thread(target=group_listener, args=(s, key), daemon=True).start()
     return s
 
@@ -430,14 +533,28 @@ def interactive():
 
     if mode == "ptp":
         role = input("Server or Client? [s/c]: ").strip().lower()
-        conn = ptp_server() if role == "s" else ptp_client(input("Server IP: ").strip())
+        if role == "s":
+            conn = ptp_server()
+            if conn is None:
+                console.print("[red]Failed to start server. Exiting.[/red]")
+                return
+        else:
+            conn = ptp_client(input("Server IP: ").strip())
+            if conn is None:
+                console.print("[red]Failed to connect to server. Exiting.[/red]")
+                return
         threading.Thread(target=ptp_receiver, args=(conn, key,), daemon=True).start()
     else:
         role = input("Host or Join? [h/j]: ").strip().lower()
         if role == "h":
             threading.Thread(target=group_acceptor, args=(key,), daemon=True).start()
+            # Give the server a moment to start
+            time.sleep(0.5)
         else:
             conn = group_tcp_join(input("Host IP: ").strip(), key)
+            if conn is None:
+                console.print("[red]Failed to join group. Exiting.[/red]")
+                return
 
     console.print("[yellow]Commands available:[/yellow] /exit | /bot <message> | /medic <symptoms> | /techhelp <issue>")
 
