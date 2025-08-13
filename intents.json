@@ -1,0 +1,428 @@
+{
+  "intents": [
+    {
+      "tag": "greeting",
+      "patterns": [
+        "hello",
+        "hi",
+        "hii",
+        "hiya",
+        "hey",
+        "heyo",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "what's up",
+        "whats up",
+        "howdy",
+        "yo",
+        "greetings",
+        "hi ghostmesh",
+        "hello system",
+        "start conversation",
+        "let's start",
+        "hey there"
+      ],
+      "responses": [
+        "Hello! How can I assist you with GhostMesh communications?",
+        "Hi — ready for secure comms. Do you want to send a message, report location, or request assistance?",
+        "Greetings! Tell me what you need: /send, /report location, /medic, or /techhelp.",
+        "Hey! GhostMesh CLI at your service — say 'help' to see common commands."
+      ],
+      "context": [
+        "Initial greeting to establish user interaction. Use in non-urgent scenarios to confirm system readiness. If user appears to want a specific action (send/report/help), follow up asking for the content or target."
+      ],
+      "description": "Handles salutations and short informal greetings; should route user to next actions if intent implies it."
+    },
+    {
+      "tag": "help",
+      "patterns": [
+        "help",
+        "commands",
+        "what can you do",
+        "list commands",
+        "show options",
+        "usage guide",
+        "how to use",
+        "instructions",
+        "manual",
+        "support",
+        "assist me",
+        "what are the features",
+        "tell me about ghostmesh",
+        "command list",
+        "available actions",
+        "quick help",
+        "show me commands",
+        "how do i send a message"
+      ],
+      "responses": [
+        "GhostMesh supports: sending messages, reporting locations, requesting medical/technical aid, network checks, and encrypt/decrypt. Try: /send <text>, /report location, /medic <symptoms>, /techhelp <issue>.",
+        "Need a quick command? 'send message \"<text>\"' to broadcast, 'report location' to share GPS, 'medic <symptoms>' for emergency triage, 'techhelp <issue>' for device/network issues.",
+        "If you want step-by-step: say 'send' then provide the message, or say 'report location' to attach GPS. For sensitive data, enable encryption by setting a passphrase at startup."
+      ],
+      "context": [
+        "Provides an overview of available commands and examples. If user asks for a specific feature, the system should follow up with a short example or request the required input."
+      ],
+      "description": "Displays help info and examples for common user actions; useful in stressful scenarios for quick guidance."
+    },
+    {
+      "tag": "send_message",
+      "patterns": [
+        "send message",
+        "send",
+        "broadcast",
+        "broadcast message",
+        "transmit",
+        "transmit message",
+        "send to team",
+        "message",
+        "message everyone",
+        "message [content]",
+        "send \"*\"",
+        "send \"{text}\"",
+        "relay message",
+        "dispatch alert",
+        "send update",
+        "notify others",
+        "ping team",
+        "ping my team",
+        "share information",
+        "forward message",
+        "send secure message",
+        "encrypt and send",
+        "transmit data"
+      ],
+      "responses": [
+        "Message queued: \"[message]\" — sending now. Reply 'confirm' to resend or 'cancel' to abort.",
+        "Transmission complete. Awaiting acknowledgments from connected nodes.",
+        "Your message has been broadcast to connected nodes. If this is urgent, add 'URGENT' or '/emergency' to increase priority.",
+        "Error: Network unstable. Message saved and will retry automatically. You can retry manually with 'resend'."
+      ],
+      "context": [
+        "Used for sending text-based communications. If message contains 'urgent' or 'sos', escalate priority and automatically attach location if available. For sensitive content, prompt user to confirm encryption status."
+      ],
+      "description": "Intent for composing and sending messages across the mesh; supports plain and encrypted messages and can prompt for confirmation when needed."
+    },
+    {
+      "tag": "report_location",
+      "patterns": [
+        "report location",
+        "share position",
+        "my coordinates",
+        "where am i",
+        "send gps",
+        "current position",
+        "log location",
+        "broadcast coordinates",
+        "position report",
+        "update whereabouts",
+        "share geo data",
+        "pin my location",
+        "transmit position",
+        "send my location now",
+        "send coords",
+        "location update"
+      ],
+      "responses": [
+        "Location reported: [LATITUDE, LONGITUDE]. Shared with network.",
+        "Position updated and broadcast successfully. If GPS failed, try moving to open sky and retry.",
+        "Unable to get GPS signal. Please try again in an open area or enter coordinates manually using 'report location <lat> <lon>'.",
+        "Location shared securely to authorized nodes. Include 'public' if you want wider broadcast."
+      ],
+      "context": [
+        "Integrates with device GPS for real-time location sharing. If GPS unavailable, prompt user for manual coordinates. Attach location automatically to urgent medical/assistance requests when permitted."
+      ],
+      "description": "Handles reporting and sharing user location for rescue, medevac, or coordination; supports auto attach to emergency reports."
+    },
+    {
+      "tag": "request_assistance",
+      "patterns": [
+        "request help",
+        "need assistance",
+        "sos",
+        "emergency aid",
+        "call for backup",
+        "require support",
+        "help needed",
+        "request rescue",
+        "aid request",
+        "backup required",
+        "evacuation needed",
+        "supply request",
+        "reinforcements",
+        "urgent assistance",
+        "i need help",
+        "please help"
+      ],
+      "responses": [
+        "Assistance request sent. Stand by for response from the network. If possible, provide your exact location and nature of the emergency.",
+        "SOS alert broadcasted with attached location if available. Please describe the situation briefly (injuries, trapped, supplies needed).",
+        "Request logged and transmitted. Priority: High. If you have injuries, also use '/medic <symptoms>'.",
+        "No immediate responders nearby. Message will be retried; consider broadening the broadcast if it's critical."
+      ],
+      "context": [
+        "Triggers high-priority alerts for help in critical situations. Automatically includes location if available. If user supplies additional details, route to medical or technical specialists as appropriate."
+      ],
+      "description": "Generic emergency assistance intent — escalates to medical or technical tracks based on user-provided details."
+    },
+    {
+      "tag": "medical_emergency",
+      "patterns": [
+        "medical emergency",
+        "injured",
+        "need medic",
+        "medical help",
+        "casualty report",
+        "wounded",
+        "request medevac",
+        "health crisis",
+        "injury alert",
+        "need doctor",
+        "bleeding",
+        "fracture",
+        "heart attack",
+        "burn victim",
+        "poisoning",
+        "allergic reaction",
+        "request medical supplies",
+        "triage needed",
+        "vitals low",
+        "unconscious",
+        "i'm bleeding",
+        "someone unconscious",
+        "severe bleeding"
+      ],
+      "responses": [
+        "Medical emergency alert sent with priority. Attach location and any symptoms: /medic <symptoms>. If patient is unconscious or not breathing, begin CPR if trained and request immediate local assistance.",
+        "Medevac request transmitted. Provide additional info (number of casualties, type of injuries) to improve response.",
+        "Alert received: injury reported. Network notifying nearest medical units. Keep airway clear, control bleeding, and monitor vitals until help arrives.",
+        "Error: No medical nodes nearby. Broadcasting widely and escalating. If possible, move to a safe area and maintain oxygen/airway support."
+      ],
+      "context": [
+        "Handles life-threatening medical events. Automatically attaches location and prompts for symptoms. Must push highest-priority broadcasting and advise immediate first-aid steps where appropriate."
+      ],
+      "description": "Critical intent for urgent medical situations; should lead to immediate alerting of medical nodes and instructions for first aid."
+    },
+    {
+      "tag": "technical_help",
+      "patterns": [
+        "technical help",
+        "tech support",
+        "device issue",
+        "network problem",
+        "troubleshoot",
+        "fix comms",
+        "error code",
+        "system malfunction",
+        "connection lost",
+        "battery low",
+        "battery issue",
+        "software bug",
+        "hardware failure",
+        "need tech repair",
+        "restart device",
+        "update firmware",
+        "signal weak",
+        "mesh disconnect",
+        "wifi down",
+        "no internet",
+        "antenna damaged",
+        "screen broken",
+        "slow device",
+        "app crash",
+        "error 404",
+        "error 500"
+      ],
+      "responses": [
+        "Technical help request sent. Describe the issue briefly (device type, symptom, error codes) and include location if on-site assistance is needed.",
+        "Troubleshooting started: try restarting the device or toggling network. If problem persists, your request has been broadcast for expert aid.",
+        "Tech alert transmitted. Priority: Medium. Provide logs or error codes using 'techhelp <error/code/description>' for faster diagnosis.",
+        "No tech specialists detected nearby. Retrying broadcast and showing self-help tips: check power, reconnect antenna, reboot system."
+      ],
+      "context": [
+        "Use for device and network troubleshooting. When possible, collect diagnostic logs and recommend immediate mitigations (restart, check power). Route to specialists if onsite repair required."
+      ],
+      "description": "Intent for requesting technical diagnostics and repairs; includes prompts to gather logs/error codes and basic self-help steps."
+    },
+    {
+      "tag": "status_update",
+      "patterns": [
+        "status update",
+        "check status",
+        "network status",
+        "system check",
+        "battery level",
+        "connection status",
+        "health check",
+        "update status",
+        "report system status",
+        "mesh info",
+        "device status",
+        "comms status",
+        "signal strength",
+        "node count",
+        "status report",
+        "are we connected",
+        "how many nodes"
+      ],
+      "responses": [
+        "Network status: Connected to [N] nodes. Signal strength: [STRONG/MEDIUM/WEAK]. Medical nodes: [M], Tech nodes: [T].",
+        "System healthy. Battery: [XX%]. No alerts pending. If you want deeper diagnostics, run 'status full'.",
+        "Status: Offline. Attempting reconnection. Check antenna/cables or run 'techhelp connection'.",
+        "Update: All systems nominal and ready for operations."
+      ],
+      "context": [
+        "Queries and reports on device and network health. Support quick-check outputs and provide commands for deeper diagnostics when issues are found."
+      ],
+      "description": "Provides operational status, node counts, battery and signal info; suggests actions when problems detected."
+    },
+    {
+      "tag": "encrypt_message",
+      "patterns": [
+        "encrypt message",
+        "secure message",
+        "encrypt comms",
+        "apply encryption",
+        "hide message",
+        "cipher content",
+        "secure transmission",
+        "encrypt data",
+        "use encryption",
+        "protect message",
+        "encode info",
+        "military encrypt",
+        "encrypt and send"
+      ],
+      "responses": [
+        "Message encrypted successfully using the session key. Ready to transmit.",
+        "Encryption applied (AES). Confirm recipients and send when ready.",
+        "Error: Encryption key missing. Set a passphrase at startup or use 'setkey <passphrase>'.",
+        "Data secured and queued for transmission."
+      ],
+      "context": [
+        "Applies encryption to messages. If encryption not configured, prompt user to set or confirm passphrase. Inform user of encryption algorithm and key status for audit."
+      ],
+      "description": "Intent to enable encryption before sending sensitive messages; includes guidance for key setup."
+    },
+    {
+      "tag": "decrypt_message",
+      "patterns": [
+        "decrypt message",
+        "unsecure text",
+        "decrypt comms",
+        "remove encryption",
+        "reveal message",
+        "decipher content",
+        "decrypt data",
+        "disable encryption",
+        "read encrypted",
+        "decrypt and view"
+      ],
+      "responses": [
+        "Message decrypted: [Original text].",
+        "Decryption successful. Content revealed.",
+        "Error: Invalid key. Access denied. Verify passphrase or key file.",
+        "Data decrypted and displayed to authorized user."
+      ],
+      "context": [
+        "Decrypts incoming or stored encrypted messages if user has key. Log access for audit in sensitive deployments."
+      ],
+      "description": "Handles decryption requests and guides users to fix key/permission issues."
+    },
+    {
+      "tag": "emergency_alert",
+      "patterns": [
+        "emergency alert",
+        "red alert",
+        "critical warning",
+        "disaster alert",
+        "military emergency",
+        "broadcast emergency",
+        "urgent alert",
+        "panic mode",
+        "alert all",
+        "evacuate now",
+        "incoming threat",
+        "flood warning",
+        "enemy sighted",
+        "fire alert",
+        "tsunami warning",
+        "all units respond",
+        "mass evacuation"
+      ],
+      "responses": [
+        "Emergency alert broadcast to all nodes. Take immediate action: follow evacuation procedures and confirm your location.",
+        "Alert sent with top priority. Await confirmations and do not move unless instructed by a rescue coordinator.",
+        "Critical warning issued. If you are in danger, move to a safe zone and report casualties using '/medic'.",
+        "Alert failed: network down. Attempt local alarms/manual relay and repeat when possible."
+      ],
+      "context": [
+        "Sends mass alerts for immediate threats. Auto-includes timestamp and location when permitted. Guides users on immediate steps to stay safe."
+      ],
+      "description": "Broadcasts high-priority alerts requiring immediate action and coordination."
+    },
+    {
+      "tag": "connect_network",
+      "patterns": [
+        "connect to mesh",
+        "join network",
+        "establish connection",
+        "link up",
+        "connect device",
+        "network join",
+        "sync with mesh",
+        "reconnect",
+        "pair devices",
+        "mesh connect",
+        "initiate link",
+        "network setup",
+        "connect comms",
+        "join session",
+        "establish mesh",
+        "bring me online",
+        "connect now"
+      ],
+      "responses": [
+        "Connected to GhostMesh network. Nodes detected: [N] (Medical: [M], Tech: [T]).",
+        "Connection established. Secure handshake complete.",
+        "Unable to connect: No nearby nodes. Try moving to open area or check antenna.",
+        "Network joined successfully. Ready for comms."
+      ],
+      "context": [
+        "Manages connection to the mesh and shows nearby node types. If connection fails, suggest hardware checks and retry commands."
+      ],
+      "description": "Handles network join/reconnect flows and provides troubleshooting prompts for failed attempts."
+    },
+    {
+      "tag": "goodbye",
+      "patterns": [
+        "bye",
+        "goodbye",
+        "see you",
+        "exit",
+        "quit",
+        "logout",
+        "end session",
+        "sign off",
+        "farewell",
+        "later",
+        "shutdown",
+        "close",
+        "terminate",
+        "disconnect",
+        "end comms"
+      ],
+      "responses": [
+        "Goodbye! Stay safe out there.",
+        "Session ended. GhostMesh signing off and closing connections.",
+        "Bye! Reconnect anytime for secure comms.",
+        "Exiting CLI. All connections closed. Use 'connect' to rejoin."
+      ],
+      "context": [
+        "Ends the user session gracefully. Ensures any pending transmissions, including medical or tech requests, are completed or saved."
+      ],
+      "description": "Handles session termination and graceful disconnect."
+    }
+  ]
+}
