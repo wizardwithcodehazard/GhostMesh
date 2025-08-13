@@ -288,18 +288,34 @@ def ptp_client(ip):
     return s
 
 def ptp_receiver(conn, key):
-    while True:
-        try:
-            data = conn.recv(BUFFER_SIZE)
-            if not data:
-                console.print("[yellow][PtP][/yellow] Connection closed by peer.")
+    try:
+        while True:
+            try:
+                data = conn.recv(BUFFER_SIZE)
+                if not data:
+                    console.print("[yellow][PtP][/yellow] Connection closed by peer.")
+                    break
+                msg = decrypt(data, key)
+                print_message(msg)
+                console.print("> ", end="")
+            except ConnectionResetError:
+                console.print("[yellow][PtP][/yellow] Connection reset by peer.")
                 break
-            msg = decrypt(data, key)
-            print_message(msg)
-            console.print("> ", end="")
-        except Exception as e:
-            console.print(f"[red][PtP recv error][/red] {e}")
-            break
+            except OSError as e:
+                if e.errno == 9:  # Bad file descriptor
+                    console.print("[yellow][PtP][/yellow] Connection closed.")
+                    break
+                else:
+                    console.print(f"[red][PtP recv error][/red] {e}")
+                    break
+            except Exception as e:
+                console.print(f"[red][PtP recv error][/red] {e}")
+                break
+    finally:
+        try:
+            conn.close()
+        except:
+            pass
 
 # ---------- GROUP CHAT ----------
 def group_acceptor(key):
@@ -334,7 +350,10 @@ def group_handler(conn, key):
                         continue
                     try:
                         peer.sendall(data)
-                    except Exception:
+                    except (ConnectionResetError, OSError, BrokenPipeError):
+                        dead.append(peer)
+                    except Exception as e:
+                        console.print(f"[yellow]Peer broadcast error: {e}[/yellow]")
                         dead.append(peer)
                 # cleanup dead peers
                 for d in dead:
@@ -355,18 +374,34 @@ def group_tcp_join(host_ip, key):
     return s
 
 def group_listener(conn, key):
-    while True:
-        try:
-            data = conn.recv(BUFFER_SIZE)
-            if not data:
-                console.print("[yellow][Group-TCP][/yellow] Server closed connection.")
+    try:
+        while True:
+            try:
+                data = conn.recv(BUFFER_SIZE)
+                if not data:
+                    console.print("[yellow][Group-TCP][/yellow] Server closed connection.")
+                    break
+                msg = decrypt(data, key)
+                print_message(msg)
+                console.print("> ", end="")
+            except ConnectionResetError:
+                console.print("[yellow][Group-TCP][/yellow] Connection reset by server.")
                 break
-            msg = decrypt(data, key)
-            print_message(msg)
-            console.print("> ", end="")
-        except Exception as e:
-            console.print(f"[red][Group listener error][/red] {e}")
-            break
+            except OSError as e:
+                if e.errno == 9:  # Bad file descriptor
+                    console.print("[yellow][Group-TCP][/yellow] Connection closed.")
+                    break
+                else:
+                    console.print(f"[red][Group listener error][/red] {e}")
+                    break
+            except Exception as e:
+                console.print(f"[red][Group listener error][/red] {e}")
+                break
+    finally:
+        try:
+            conn.close()
+        except:
+            pass
 
 # ---------- CLI COMMANDS ----------
 @app.command()
@@ -498,21 +533,27 @@ def interactive():
         # If not a local command, send to peers
         full_msg = f"[{username}] {msg}"
         data = encrypt(full_msg, key) if key else full_msg.encode()
-        if conn:
-            try:
+        
+        try:
+            if conn:
                 conn.sendall(data)
-            except Exception as e:
-                console.print(f"[red]Send error: {e}[/red]")
-        elif role == "h":
-            with group_lock:
-                dead = []
-                for peer in list(group_peers):
-                    try:
-                        peer.sendall(data)
-                    except Exception:
-                        dead.append(peer)
-                for d in dead:
-                    _remove_peer(d)
+            elif role == "h":
+                with group_lock:
+                    dead = []
+                    for peer in list(group_peers):
+                        try:
+                            peer.sendall(data)
+                        except (ConnectionResetError, OSError, BrokenPipeError):
+                            dead.append(peer)
+                        except Exception as e:
+                            console.print(f"[yellow]Peer send error: {e}[/yellow]")
+                            dead.append(peer)
+                    for d in dead:
+                        _remove_peer(d)
+        except (ConnectionResetError, OSError, BrokenPipeError):
+            console.print("[red]Connection lost. Unable to send message.[/red]")
+        except Exception as e:
+            console.print(f"[red]Send error: {e}[/red]")
 
     console.print("[bold red]Goodbye.[/bold red]")
 
