@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GhostMesh CLI Tool v4.2
+GhostMesh CLI Tool v4.27
 - Premium Gemini-style UI
 - Secure P2P & Group Chat with AES-EAX + DNA Obfuscation
 - Local ML integration for chatbot, medical triage, and tech help
